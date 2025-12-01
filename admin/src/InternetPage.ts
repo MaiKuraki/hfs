@@ -12,7 +12,7 @@ import { alertDialog, confirmDialog, formDialog, promptDialog, toast, waitDialog
 import { BoolField, Form, MultiSelectField, NumberField, SelectField } from '@hfs/mui-grid-form'
 import { suggestMakingCert } from './OptionsPage'
 import { changeBaseUrl } from './FileForm'
-import { getNatInfo } from '../../src/nat'
+import { adminApis } from '../../src/adminApis'
 import { ALL, WITH_IP } from './countries'
 import _ from 'lodash'
 import { SvgIconProps } from '@mui/material/SvgIcon/SvgIcon'
@@ -37,9 +37,8 @@ export default function InternetPage({ setTitleSide }: PageProps) {
     const baseUrl = config.data?.[CFG.base_url]
     const localColor = with_([status.data?.http?.error, status.data?.https?.error], ([h, s]) =>
         h && s ? 'error' : h || s ? 'warning' : 'success')
-    type GetNat = Awaited<ReturnType<typeof getNatInfo>>
-    const nat = useApiEx<GetNat>('get_nat', {}, { timeout: 20 })
-    const { data: publicIps } = useApiEx('get_public_ips')
+    const nat = useApiEx<typeof adminApis.get_nat>('get_nat', {}, { timeout: 20 })
+    const { data: publicIps } = useApiEx<typeof adminApis.get_public_ips>('get_public_ips')
     const { data } = nat
     const port = data?.internalPort
     const wrongMap = data?.mapped && data.mapped.private.port !== port && data.mapped.private.port
@@ -182,7 +181,7 @@ export default function InternetPage({ setTitleSide }: PageProps) {
         return status.element || h(TitleCard, { title: "HTTPS", icon: Lock, color: https?.listening && !error ? 'success' : 'warning' },
             error ? h(Alert, { severity: 'warning' }, error) :
                 (disabled && h(LinkBtn, { onClick: notEnabled }, "Not enabled")),
-            cert.element || with_(cert.data, c => c.none ? h(LinkBtn, { onClick: () => suggestMakingCert().then(cert.reload) }, "No certificate configured") : h(Box, {},
+            cert.element || with_(cert.data, c => c.none ? h(LinkBtn, { onClick: noCertClick }, "No certificate configured") : h(Box, {},
                 h(CardMembership, { fontSize: 'small', sx: { mr: 1, verticalAlign: 'middle' } }), "Current certificate",
                 h('ul', {},
                     h('li', {}, "Domain: ", c.altNames?.join(' + ') ||'-'),
@@ -246,6 +245,12 @@ export default function InternetPage({ setTitleSide }: PageProps) {
                 },
             })
         )
+
+        async function noCertClick() {
+            await suggestMakingCert()
+            cert.reload()
+            status.reload()
+        }
     }
 
     async function notEnabled() {

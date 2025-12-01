@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'path'
 import {
     makeMatcher, setHidden, onlyTruthy, isValidFileName, throw_, VfsPerms, Who, debounceAsync,
     isWhoObject, WHO_ANY_ACCOUNT, defaultPerms, PERM_KEYS, removeStarting, HTTP_SERVER_ERROR, try_, matches,
+    statWithTimeout,
 } from './misc'
 import Koa from 'koa'
 import _ from 'lodash'
@@ -43,7 +44,7 @@ export interface VfsNode extends VfsNodeStored { // include fields that are only
     original?: VfsNode // if this is a temp node but reflecting an existing node
     parent?: VfsNode // available when original is available
     isFolder?: boolean // use nodeIsFolder() instead of relying on this field
-    stats?: Stats
+    stats?: Promise<Stats>
 }
 
 export function permsFromParent(parent: VfsNode, child: VfsNode) {
@@ -118,12 +119,9 @@ export async function urlToNode(url: string, ctx?: Koa.Context, parent: VfsNode=
     if (rest || ret?.original)
         return urlToNode(rest, ctx, ret, getRest)
     if (ret.source)
-        try {
-            if (!showHiddenFiles.get() && await isHiddenFile(ret.source))
-                throw 'hiddenFile'
-            ret.isFolder = (await nodeStats(ret))!.isDirectory() // throws if it doesn't exist on disk
-        }
-        catch {
+        if (!showHiddenFiles.get() && await isHiddenFile(ret.source))
+            throw 'hiddenFile'
+        else if (await setIsFolder(ret) === undefined) { // undefined = not found on disk
             if (!getRest)
                 return
             const rest = ret.source.slice(parent.source!.length) // parent has source, otherwise !ret.source || ret.original
@@ -133,11 +131,13 @@ export async function urlToNode(url: string, ctx?: Koa.Context, parent: VfsNode=
     return ret
 }
 
-export async function nodeStats(ret: VfsNode) {
-    if (ret.stats)
-        return ret.stats
-    const stats = ret.source ? await fs.stat(ret.source) : undefined
-    setHidden(ret, { stats })
+export async function nodeStats(node: VfsNode) {
+    if (node.stats || !node.source)
+        return node.stats
+    const stats = statWithTimeout(node.source).catch(() => {
+        setHidden(node, { stats: null }) // don't cache rejected promises
+    })
+    setHidden(node, { stats })
     return stats
 }
 
@@ -148,10 +148,10 @@ async function isHiddenFile(path: string) {
 
 export async function getNodeByName(name: string, parent: VfsNode) {
     // does the tree node have a child that goes by this name, otherwise attempt disk
-    const child = parent.children?.find(isSameFilenameAs(name)) || childFromDisk()
+    const child = parent.children?.find(isSameFilenameAs(name)) || await childFromDisk()
     return child && applyParentToChild(child, parent, name)
 
-    function childFromDisk() {
+    async function childFromDisk() {
         if (!parent.source) return
         const ret: VfsNode = {}
         let onDisk = name
@@ -166,19 +166,28 @@ export async function getNodeByName(name: string, parent: VfsNode) {
         if (!isValidFileName(onDisk)) return
         ret.source = join(parent.source, onDisk)
         ret.original = undefined // this will overwrite the 'original' set in applyParentToChild, so we know this is not part of the vfs
+        await setIsFolder(ret)
         return ret
     }
 }
 
+async function setIsFolder(node: VfsNode) {
+    if (!node.source) return
+    const isFolder = /[\\/]$/.test(node.source) || await nodeStats(node).then(x => x?.isDirectory(), () => undefined)
+    setHidden(node, { isFolder })
+    return isFolder
+}
+
 export let vfs: VfsNode = {}
-defineConfig('vfs', vfs).sub(reviewVfs)
+defineConfig('vfs', vfs).sub(async x => {
+    await reviewVfs(x)
+    console.log('VFS ready')
+})
 
 async function reviewVfs(data=vfs) {
     await (async function recur(node) {
-        if (node.source && !node.children?.length && node.isFolder === undefined) {
-            const isFolder = /[\\/]$/.test(node.source) || (await nodeStats(node).catch(() => {}))?.isDirectory()
-            setHidden(node, { isFolder })
-        }
+        if (node.source && !node.children?.length && node.isFolder === undefined)
+            await setIsFolder(node)
         if (node.children)
             await Promise.allSettled(node.children.map(recur))
     })(data)
@@ -214,9 +223,19 @@ export function getNodeName(node: VfsNode) {
     return base
 }
 
+// this is sync
 export function nodeIsFolder(node: VfsNode) {
     return node.isFolder ?? node.original?.isFolder
-        ?? (!nodeIsLink(node) && (node.children?.length! > 0 || !node.source))
+        ?? (nodeIsLink(node) ? false : (node.children?.length! > 0 || !node.source || reconsider()))
+
+    function reconsider() {
+        // a networked source may be offline at startup, and become online later: recalculate in the background
+        nodeStats(node).then(s => {
+            if (s)
+                setHidden(node.original || node, { isFolder: s.isDirectory() })
+        }, () => {})
+        return undefined
+    }
 }
 
 export async function hasDefaultFile(node: VfsNode, ctx: Koa.Context) {
@@ -300,26 +319,26 @@ export async function* walkNode(parent: VfsNode, {
         async read() {
             if (started) return // for simplicity, we care about starting, and never suspend
             started = true
-            const { children, source } = parent
+            const { source } = parent
             const taken = prefixPath ? undefined : new Set()
             const maskApplier = parentMaskApplier(parent)
             const visitLater: any = []
-            if (children) for (const child of children) {
+            const childrenWorking = parent.children?.length && Promise.all(parent.children.map(async child => {
                 const nodeName = getNodeName(child)
                 const name = prefixPath + nodeName
                 taken?.add(normalizeFilename(name))
                 const item = { ...child, original: child, name, parent }
-                if (await cantSee(item)) continue
+                if (await cantSee(item)) return
                 if (item.source && !item.children?.length) // real items must be accessible, unless there's more to it
                     try { await fs.access(item.source) }
-                    catch { continue }
+                    catch { return }
                 const isFolder = nodeIsFolder(child)
                 if (onlyFiles ? !isFolder : (!onlyFolders || isFolder))
                     stream.push(item)
-                if (!depth || !isFolder || cantRecur(item)) continue
+                if (!depth || !isFolder || cantRecur(item)) return
                 inheritMasks(item, parent)
                 visitLater.push([item, name]) // prioritize siblings
-            }
+            }))
 
             try {
                 if (!source)
@@ -337,7 +356,7 @@ export async function* walkNode(parent: VfsNode, {
                         }
                         if (usingDescriptIon() && entry.name === DESCRIPT_ION)
                             return
-                        const {path} = entry
+                        const {path} = entry // this path is not the original deprecated property: we are overwriting/reusing it
                         const isFolder = entry.isDirectory()
                         let renamed = parent.rename?.[path]
                         if (renamed) {
@@ -363,6 +382,7 @@ export async function* walkNode(parent: VfsNode, {
                 }
             }
             finally {
+                await childrenWorking
                 for (const [item, name] of visitLater)
                     for await (const x of walkNode(item, { depth: depth - 1, prefixPath: name + '/', ctx, requiredPerm, onlyFolders, parallelizeRecursion }))
                         stream.push(x)

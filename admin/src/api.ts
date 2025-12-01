@@ -10,6 +10,7 @@ import { state } from './state'
 import { Refresh } from '@mui/icons-material'
 import { produce, Draft } from 'immer'
 import { ApiError, apiEvents, setDefaultApiCallOptions, useApi } from '@hfs/shared/api'
+import { ApiHandler } from '../../src/apiMiddleware'
 export * from '@hfs/shared/api'
 
 setDefaultApiCallOptions({
@@ -23,8 +24,8 @@ setDefaultApiCallOptions({
 
 const ERRORS = { timeout: "Operation timeout" }
 // expand useApi with things that cannot be shared with Frontend
-export type ApiObject<T=any> = ReturnType<typeof useApiEx<T>>
-export function useApiEx<T=any>(...args: Parameters<typeof useApi>) {
+export type ApiObject<T extends ApiHandler=any> = ReturnType<typeof useApiEx<T>>
+export function useApiEx<T extends ApiHandler=any>(...args: Parameters<typeof useApi>) {
     const res = useApi<T>(...args)
     return {
         ...res,
@@ -63,7 +64,7 @@ export function useApiList<T=any, S=T>(cmd:string|Falsy, params: Dict={}, { map,
                     return ret
                 }
                 const ret = [...list, ...chunk]
-                ret.splice(0, length - (limit ?? Infinity))
+                ret.splice(0, ret.length - (limit ?? Infinity))
                 return ret
             })
         }, 1000, { maxWait: 1000 })

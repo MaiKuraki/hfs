@@ -6,24 +6,29 @@ import { Alert, Box, Button, Card, CardContent, Grid, Link, List, ListItem, List
 import { state, useSnapState } from './state'
 import VfsTree, { vfsNodeIcon } from './VfsTree'
 import {
-    CFG, matches, newDialog, normalizeHost, onlyTruthy, pathEncode, prefix, VfsNodeAdminSend, HIDE_IN_TESTS
+    CFG, matches, newDialog, normalizeHost, onlyTruthy, pathEncode, prefix, VfsNodeAdminSend, HIDE_IN_TESTS, wait
 } from './misc'
 import { Flex, useBreakpoint } from './mui'
 import { reactJoin } from '@hfs/shared'
 import _ from 'lodash'
-import { Account } from './AccountsPage'
+import apiAccounts from '../../src/api.accounts'
 import FileForm from './FileForm'
 import { Add, Delete } from '@mui/icons-material'
 import { alertDialog, confirmDialog } from './dialog'
 import { PageProps } from './App'
 
 let selectOnReload: string[] | undefined
+let exposeVfsLoading: Promise<unknown> | undefined
 
 export default function VfsPage({ setTitleSide }: PageProps) {
     const [id2node] = useState(() => new Map<string, VfsNode>())
     const { vfs, selectedFiles, movingFile } = useSnapState()
-    const { data, reload, element } = useApiEx('get_vfs')
-    useMemo(() => vfs || reload(), [vfs, reload])
+    const { data, reload, element, loading } = useApiEx('get_vfs')
+    exposeVfsLoading = loading
+    useEffect(() => {
+        if (!vfs)
+            reload()
+    }, [vfs, reload])
     const { data: config } = useApiEx('get_config', { only: [CFG.force_address, CFG.base_url] })
     const sideBreakpoint = 'md'
     const isSideBreakpoint = useBreakpoint(sideBreakpoint)
@@ -41,7 +46,7 @@ export default function VfsPage({ setTitleSide }: PageProps) {
             ret.unshift(b)
         return ret
     }, [status, config])
-    const accountsApi = useApiEx<{ list: Account[] }>('get_accounts') // load accounts once and for all, or !isSideBreakpoint will cause a call for each selection
+    const accountsApi = useApiEx<typeof apiAccounts.get_accounts>('get_accounts') // load accounts once and for all, or !isSideBreakpoint will cause a call for each selection
     const accounts = useMemo(() => _.sortBy(accountsApi?.data?.list, 'username'), [accountsApi.data])
 
     // this will take care of closing the dialog, for the user's convenience, after "cut" button is pressed
@@ -171,6 +176,7 @@ export default function VfsPage({ setTitleSide }: PageProps) {
 export function reloadVfs(pleaseSelect?: string[]) {
     selectOnReload = pleaseSelect
     state.vfs = undefined
+    return wait(100).then(() => exposeVfsLoading) // ensure the loading started and finished. Not great, but does the job. Consider a cleaner solution.
 }
 
 async function deleteFiles() {

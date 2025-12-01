@@ -1,6 +1,6 @@
 {
   "name": "hfs",
-  "version": "0.57.24",
+  "version": "0.57.27-beta2",
   "description": "HTTP File Server",
   "keywords": ["file server", "http server"],
   "homepage": "https://rejetto.com/hfs",
@@ -13,7 +13,7 @@
     "start-frontend": "npm run start --workspace=frontend",
     "start-admin": "npm run start --workspace=admin",
     "build-all": "npm audit --omit=dev --audit-level=moderate && rm -rf dist && npm i && npm run build-server && npm run test-with-server && (npm run build-frontend & npm run build-admin) && echo COMPLETED",
-    "build-server": "rm -rf dist/src dist/plugins && tsc --target es2018 && touch package.json && cp -v -r package.json central.json README* LICENSE* hfs.ico plugins dist && find dist -name .DS_Store -o -name storage -exec rm -rf {} + && node afterbuild.js",
+    "build-server": "rm -rf dist/src dist/plugins && tsc && touch package.json && cp -v -r package.json central.json README* LICENSE* hfs.ico plugins dist && find dist -name .DS_Store -o -name storage -exec rm -rf {} + && node afterbuild.js",
     "build-frontend": "npm run build --workspace=frontend",
     "build-admin": "npm run build --workspace=admin",
     "server-for-test": "node dist/src --cwd tests/work --config tests --debug",
@@ -57,6 +57,7 @@
   "pkg": {
     "assets": [
       "central.json",
+      "src/statWorker.js",
       "admin/**/*",
       "frontend/**/*",
       "**/node_modules/fswin/x64/*",
@@ -82,7 +83,7 @@
     "iconv-lite": "^0.7.0",
     "immer": "^10.1.3",
     "ip2location-nodejs": "^9.7.0",
-    "koa": "^3.0.3",
+    "koa": "^3.1.1",
     "koa-compress": "^5.1.1",
     "koa-mount": "^4.2.0",
     "koa-session": "^7.0.2",
@@ -114,7 +115,7 @@
     "@types/node": "^20.17.30",
     "@types/node-forge": "^1.3.14",
     "@types/picomatch": "^4.0.2",
-    "@yao-pkg/pkg": "^6.6.0",
+    "@yao-pkg/pkg": "^6.10.1",
     "cross-env": "^10.0.0",
     "koa-better-http-proxy": "^0.2.10",
     "nm-prune": "^5.0.0",

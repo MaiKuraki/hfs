@@ -4,10 +4,10 @@ import { apiGithubPaginated, getProjectInfo, getRepoInfo } from './github'
 import { ARGS_FILE, HFS_REPO, IS_BINARY, IS_WINDOWS, PREVIOUS_TAG, RUNNING_BETA } from './const'
 import { dirname, join } from 'path'
 import { spawn, spawnSync } from 'child_process'
-import { DAY, exists, debounceAsync, unzip, prefix, xlate, HOUR, httpWithBody } from './misc'
+import { DAY, exists, debounceAsync, unzip, prefix, xlate, HOUR, httpWithBody, statWithTimeout } from './misc'
 import { createReadStream, existsSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { pluginsWatcher } from './plugins'
-import { chmod, rename, stat, writeFile } from 'fs/promises'
+import { chmod, rename, writeFile } from 'fs/promises'
 import open from 'open'
 import { currentVersion, defineConfig, versionToScalar } from './config'
 import { cmdEscape, RUNNING_AS_SERVICE } from './util-os'
@@ -151,10 +151,10 @@ export async function update(tagOrUrl: string='') {
             join(binPath, path === binFile ? newBinFile : path))
         const newBin = join(binPath, newBinFile)
         if (!IS_WINDOWS) {
-            const { mode } = await stat(bin)
+            const { mode } = await statWithTimeout(bin)
             await chmod(newBin, mode).catch(console.error)
         }
-        await rename(INSTALLED_FN, PREVIOUS_FN).catch(console.warn)
+        await rename(INSTALLED_FN, PREVIOUS_FN).catch(e => e?.code !== 'ENOENT' && console.warn(String(e)))
         await rename(LOCAL_UPDATE, INSTALLED_FN).catch(console.warn)
         onProcessExit(() => {
             const oldBinFile = 'old-' + binFile
@@ -189,7 +189,7 @@ if (argv.updating) { // we were launched with a temporary name, restore original
         onProcessExit(() =>
             launch(dest, ['--updated', '--cwd .']) ) // launch+sync here would cause old process to stay open, locking ports
     else {
-        /* open() is the only consistent way that i could find working on Mac that preserved console input/output over relaunching,
+        /* open() is the only consistent way that I could find working on macos preserving console input/output over relaunching,
          * but I couldn't find a way to pass parameters, at least on Linux. The workaround I'm using is to write them to a temp file, that's read and deleted at restart.
          * For the record, on mac you can: write "./hfs arg1 arg2" to /tmp/tmp.sh with 0o700, and then spawn "open -a Terminal /tmp/tmp.sh"
          */

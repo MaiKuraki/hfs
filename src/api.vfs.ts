@@ -2,15 +2,15 @@
 
 import {
     getNodeName, isSameFilenameAs, nodeIsFolder, saveVfs, urlToNode, vfs, VfsNode, applyParentToChild,
-    permsFromParent, nodeIsLink, VfsNodeStored, isRoot
+    permsFromParent, VfsNodeStored, isRoot, nodeStats
 } from './vfs'
 import _ from 'lodash'
-import { mkdir, stat } from 'fs/promises'
+import { mkdir } from 'fs/promises'
 import { ApiError, ApiHandlers } from './apiMiddleware'
 import { dirname, extname, join, resolve } from 'path'
 import {
     enforceFinal, enforceStarting, isDirectory, isValidFileName, isWindowsDrive, makeMatcher, PERM_KEYS,
-    VfsNodeAdminSend
+    statWithTimeout, VfsNodeAdminSend
 } from './misc'
 import {
     IS_WINDOWS, HTTP_BAD_REQUEST, HTTP_NOT_FOUND, HTTP_SERVER_ERROR, HTTP_CONFLICT, HTTP_NOT_ACCEPTABLE,
@@ -32,15 +32,15 @@ const ALLOWED_KEYS: (keyof VfsNodeStored)[] = ['name', 'source', 'masks', 'defau
 
 export interface LsEntry { n:string, s?:number, m?:string, c?:string, k?:'d' }
 
-const apis: ApiHandlers = {
+export default {
 
     async get_vfs() {
         return { root: await recur() }
 
         async function recur(node=vfs): Promise<VfsNodeAdminSend> {
             const { source } = node
-            const stats = !source ? undefined : (node.stats || await stat(source!).catch(() => undefined))
-            const isDir = !nodeIsLink(node) && (!source || (stats?.isDirectory() ?? (source.endsWith('/') || node.children?.length! > 0)))
+            const stats = await nodeStats(node)
+            const isFolder = nodeIsFolder(node)
             const copyStats: Pick<VfsNodeAdminSend, 'size' | 'birthtime' | 'mtime'> = stats ? _.pick(stats, ['size', 'birthtime', 'mtime'])
                 : { size: source ? -1 : undefined }
             if (copyStats.mtime && (stats?.mtimeMs! - stats?.birthtimeMs!) < 1000)
@@ -56,10 +56,10 @@ const apis: ApiHandlers = {
                 inherited,
                 byMasks: _.isEmpty(byMasks) ? undefined : byMasks,
                 website: Boolean(node.children?.find(isSameFilenameAs('index.html')))
-                    || isDir && source && await stat(join(source, 'index.html')).then(() => true, () => undefined)
+                    || isFolder && source && await statWithTimeout(join(source, 'index.html')).then(() => true, () => undefined)
                     || undefined,
                 name: getNodeName(node),
-                type: isDir ? 'folder' : undefined,
+                type: isFolder ? 'folder' : undefined,
                 children: node.children && await Promise.all(node.children.map(async child =>
                     recur(await applyParentToChild(child, node)) ))
             }
@@ -214,7 +214,7 @@ const apis: ApiHandlers = {
                             if (!files || fileMask && !matching(name))
                                 return
                         try {
-                            const stats = entry.stats || await stat(join(path, name))
+                            const stats = entry.stats || await statWithTimeout(join(path, name))
                             list.add({
                                 n: name,
                                 s: stats.size,
@@ -268,9 +268,7 @@ const apis: ApiHandlers = {
         return {}
     },
 
-}
-
-export default apis
+} satisfies ApiHandlers
 
 // pick only selected props, and consider null and empty string as undefined, as it's the default value and we don't want to store it
 export function pickProps(o: any, keys: string[]) {

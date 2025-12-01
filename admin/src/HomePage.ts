@@ -1,7 +1,7 @@
 // This file is part of HFS - Copyright 2021-2023, Massimo Melina <a@rejetto.com> - License https://www.gnu.org/licenses/gpl-3.0.txt
 
 import { createElement as h, ReactNode, useState } from 'react'
-import { Box, Card, CardContent, LinearProgress, Link } from '@mui/material'
+import { Box, Card, CardContent, Link } from '@mui/material'
 import { apiCall, useApiEx, useApiList } from './api'
 import {
     dontBotherWithKeys, objSameKeys, onlyTruthy, prefix, REPO_URL, md,
@@ -9,13 +9,11 @@ import {
 } from './misc'
 import { Btn, Flex, InLink, LinkBtn, wikiLink, } from './mui'
 import {
-    BrowserUpdated as UpdateIcon, CheckCircle, Colorize, Error, Info, Launch, OpenInNew, Restore, Warning
+    BrowserUpdated as UpdateIcon, CheckCircle, Colorize, Error, Info, OpenInNew, Restore, Warning
 } from '@mui/icons-material'
 import { state, useSnapState } from './state'
 import { alertDialog, confirmDialog, promptDialog, toast } from './dialog'
 import { isCertError, isKeyError, suggestMakingCert } from './OptionsPage'
-import { VfsNode } from './VfsPage'
-import { Account } from './AccountsPage'
 import _ from 'lodash'
 import { subscribeKey } from 'valtio/utils'
 import { SwitchThemeBtn } from './theme'
@@ -29,15 +27,14 @@ export default function HomePage() {
     const SOLUTION_SEP = " — "
     const { username } = useSnapState()
     const { data: status, reload: reloadStatus, element: statusEl } = useApiEx<typeof adminApis.get_status>('get_status')
-    const { data: vfs } = useApiEx<{ root?: VfsNode }>('get_vfs')
-    const { data: account } = useApiEx<Account>(username && 'get_account')
-    const cfg = useApiEx('get_config', { only: ['https_port', 'cert', 'private_key', 'proxies', 'ignore_proxies'] })
+    const { data: account } = useApiEx<typeof adminApis.get_account>(username && 'get_account')
+    const cfg = useApiEx('get_config', { only: ['https_port', 'cert', 'private_key', 'proxies', 'ignore_proxies', 'vfs'] })
     const { list: plugins } = useApiList('get_plugins')
     const [checkPlugins, setCheckPlugins] = useState(false)
     const { list: pluginUpdates} = useApiList(checkPlugins && 'get_plugin_updates')
     const [updates, setUpdates] = useState<undefined | Release[]>()
     const [otherVersions, setOtherVersions] = useState<undefined | Release[]>()
-    if (statusEl || !status)
+    if (statusEl || !status) // !status here to shut up ts
         return statusEl
     const { http, https } = status
     const goSecure = !http?.listening && https?.listening ? 's' : ''
@@ -65,11 +62,12 @@ export default function HomePage() {
         },
         title: status.updatePossible && "Right-click if you want to install a zip",
     }
+    const vfs = cfg.data?.vfs
     return h(Box, {},
         h(RandomPlugin),
         h(Box, { display:'flex', gap: 2, flexDirection:'column', alignItems: 'flex-start', height: '100%' },
             entry('', md("This is the *Admin-panel*, where you manage your server. Access your files on the [Front-end](../..).")),
-            !vfs ? h(LinearProgress) : !vfs.root?.children?.length && !vfs.root?.source ? entry('warning', "You have no shared files", SOLUTION_SEP, fsLink("add some")) : null,
+            vfs && !vfs.children?.length && !vfs.source ? entry('warning', "You have no shared files", SOLUTION_SEP, fsLink("add some")) : null,
             account?.adminActualAccess ? entry('', "Welcome, "+username)
                 : entry('', md("You're accessing the Admin-panel without an account because you are on localhost"),
                     SOLUTION_SEP, "to access from another computer, you must ", h(InLink, { to:'accounts' }, md("create an account with *admin* permission")) ),

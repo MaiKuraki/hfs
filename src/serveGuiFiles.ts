@@ -1,7 +1,6 @@
 // This file is part of HFS - Copyright 2021-2023, Massimo Melina <a@rejetto.com> - License https://www.gnu.org/licenses/gpl-3.0.txt
 
 import Koa from 'koa'
-import fs from 'fs/promises'
 import {
     API_VERSION, MIME_AUTO, FRONTEND_URI, HTTP_METHOD_NOT_ALLOWED, HTTP_NO_CONTENT, HTTP_NOT_FOUND,
     PLUGINS_PUB_URI, VERSION, SPECIAL_URI, ICONS_URI, DEV
@@ -12,8 +11,8 @@ import { refresh_session } from './api.auth'
 import { ApiError } from './apiMiddleware'
 import { join, extname } from 'path'
 import {
-    CFG, debounceAsync, formatBytes, FRONTEND_OPTIONS, isPrimitive, newObj, objSameKeys, onlyTruthy, parseFileContent,
-    enforceStarting
+    CFG, debounceAsync, formatBytes, FRONTEND_OPTIONS, isPrimitive, newObj, objSameKeys, onlyTruthy, parseFile,
+    enforceStarting, statWithTimeout
 } from './misc'
 import { favicon, title } from './adminApis'
 import { customHtml, getAllSections, getSection } from './customHtml'
@@ -44,7 +43,7 @@ function serveStatic(uri: string): Koa.Middleware {
             return ctx.status = HTTP_METHOD_NOT_ALLOWED
         const serveApp = shouldServeApp(ctx)
         const fullPath = join(__dirname, '..', folder, serveApp ? '/index.html': ctx.path)
-        const content = await parseFileContent(fullPath,
+        const content = await parseFile(fullPath,
             raw => serveApp || !raw.length ? raw : adjustBundlerLinks(ctx, uri, raw) )
             .catch(() => null)
         if (content === null)
@@ -68,7 +67,7 @@ function adjustBundlerLinks(ctx: Koa.Context, uri: string, data: string | Buffer
 
 const getFaviconTimestamp = debounceAsync(async () => {
     const f = favicon.get()
-    return !f ? 0 : fs.stat(f).then(x => x?.mtimeMs || 0, () => 0)
+    return !f ? 0 : statWithTimeout(f).then(x => x?.mtimeMs || 0, () => 0)
 }, { retain: 5_000 })
 
 async function treatIndex(ctx: Koa.Context, filesUri: string, body: string) {
