@@ -229,6 +229,8 @@ export function uploadWriter(base: VfsNode, baseUri: string, filename: string, c
             Object.assign(ctx.state, { opTotal: fullSize, opOffset: resume / fullSize, opProgress: 0 })
             const conn = updateConnectionForCtx(ctx)
             if (!conn) return
+            if (writeStream.closed || writeStream.destroyed || writeStream.writableFinished) return
+            // tracking
             const h = setInterval(() => {
                 const now = Date.now()
                 const got = bytesGot()
@@ -237,7 +239,9 @@ export function uploadWriter(base: VfsNode, baseUri: string, filename: string, c
                 lastGotTime = now
                 updateConnection(conn, { inSpeed, got }, { opProgress: (resume + got) / fullSize })
             }, 1000)
-            writeStream.once('close', () => clearInterval(h) )
+            const stopTracking = () => clearInterval(h)
+            writeStream.once('close', stopTracking)
+            writeStream.once('error', stopTracking)
         }
 
         function bytesGot() {

@@ -68,7 +68,7 @@ export function walkDir(path: string, { depth = 0, hidden = true, parallelizeRec
         }
         else for await (let entry of (pluginIterator || await opendir(base))) {
             if (stopped) break
-            if (!hidden && entry.name[0] === '.' && !IS_WINDOWS)
+            if (!hidden && !IS_WINDOWS && entry.name[0] === '.')
                 continue
             const stats = entry.isSymbolicLink?.() && await statWithTimeout(join(base, entry.name)).catch(() => null)
             if (stats === null) continue
