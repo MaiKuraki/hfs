@@ -125,7 +125,7 @@ export function MenuPanel() {
         remoteSearch && h('div', { id: 'searched' },
             (stopSearch ? t`Searching` : t`Searched`) + ': ',
             _.map({ search: t`Name`, searchComment: t`Comment` }, (v,k) => prefix(v + ': ', remoteSearch[k])).filter(Boolean).join(' and '),
-            prefix(' (', searchManuallyInterrupted && t`interrupted`, ')')
+            prefix(' (', searchManuallyInterrupted && t`Interrupted`, ')')
         ),
     )
 
