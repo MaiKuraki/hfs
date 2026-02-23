@@ -166,8 +166,8 @@ function Dialog(d: DialogOptions) {
                 },
                 ...d.dialogProps,
             },
-                d.closable && h('button', {
-                    className: 'dialog-icon dialog-closer',
+                h('button', {
+                    className: 'dialog-icon dialog-closer' + (d.closable ? '' : ' hidden'),
                     onClick() { closeDialog() },
                     ...d.closableProps,
                 }),
