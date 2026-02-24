@@ -9,5 +9,8 @@ export const storedMap = new KvStorage({
     rewriteLater: true,
     bucketThreshold: 10_000,
 })
-storedMap.open('data.kv')
+storedMap.open('data.kv').catch(e => {
+    console.error(e?.message.includes('locked') ? `Check if another HFS is running on the same config folder – ${e.message}` : String(e))
+    process.exit(3)
+})
 onProcessExit(() => storedMap.flush())

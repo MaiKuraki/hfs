@@ -36,7 +36,7 @@ if (!argv.updating && !showHelp) {
         function clean() {
             if (isClean) return
             return cleaning ||= new Promise(resolve => {
-                cursorTo(process.stdout, 0, undefined, () => {// we don't need to clean as long as the prompt is never longer then the printed line
+                cursorTo(process.stdout, 0, undefined, () => { // we don't need to clean as long as the prompt is never longer than the printed line
                     resolve()
                     cleaning = undefined
                     isClean = true
@@ -50,7 +50,7 @@ if (!argv.updating && !showHelp) {
             consoleHint("this is an interactive console, you can enter commands")
             printHintOnce = undefined as any // never more
         }, 2000)
-        _.each(console, (v: any, k) => {
+        setTimeout(() => _.each(console, (v: any, k) => {
             if (!_.isFunction(v)) return
             ;(console as any)[k] = async (...args: any[]) =>  {
                 if (!quitting && tty)
@@ -61,7 +61,7 @@ if (!argv.updating && !showHelp) {
                     printHintOnce?.()
                 }
             }
-        })
+        }), 1000) // avoid messing in making console methods async too soon and so preventing fatal errors to be printed before process.exit – TODO investigate how to avoid this async thing at all
 
     }
     catch {
@@ -136,7 +136,7 @@ const commands = {
         params: '[<key-mask>]',
         cb(key='*') {
             const matcher = makeMatcher(key)
-            const filtered = _.pickBy(getWholeConfig({}), (v, k) => matcher(k))
+            const filtered = _.pickBy(getWholeConfig({}), (_v, k) => matcher(k))
             console.log('\n' + yaml.stringify(filtered, { lineWidth:1000 }).trim())
         }
     },
